@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="HttpTrickyServer">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/HTTPfiles/HttpTrickyServer.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
