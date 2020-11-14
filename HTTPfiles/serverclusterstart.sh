@@ -1,5 +1,5 @@
 #!/bin/sh
-kill "$(ps ax |grep "java -jar HttpTrickyServer.jar [0-9]*" |grep -v "grep"|awk '{print $1}')"
+kill "$(ps ax |grep "java -jar HttpTrickyServer.jar [0-9]*" |grep -v "grep"|awk "{print $1}")"
 sleep 1
 echo "HttpTrickyServer 0"
 java -jar HttpTrickyServer.jar 8080 &
