@@ -68,6 +68,7 @@ public class GetFile {
 		int totalBytesRead = 0;
 		ByteBuffer buffer = ByteBuffer.allocate(BUF_SIZE);
 		do {
+			int requestedBytes = 0;
 			try (Socket socket = new Socket(url.getHost(), url.getPort())) {
 				String request = "GET " + url.getPath() + " HTTP/1.0\r\n" +
 						"Range: bytes=" + (firstByte + totalBytesRead) + "-" + lastByte + "\r\n" +
@@ -88,11 +89,12 @@ public class GetFile {
 					int bytesWritten = w.get();
 					buffer.clear();
 					totalBytesRead += bytesWritten;
-					stat.newRequest(bytesWritten);
+					requestedBytes += bytesWritten;
 				}
 			} catch (SocketException ignored) {} catch (InterruptedException | ExecutionException e) {
 				e.printStackTrace();
 			}
+			stat.newRequest(requestedBytes);
 		} while (totalBytesRead <= lastByte - firstByte);
 	}
 
