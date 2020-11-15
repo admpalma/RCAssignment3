@@ -6,10 +6,13 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.URL;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.WRITE;
@@ -42,37 +45,37 @@ public class GetFile {
 		long fileSize = getFileSizeOf(urlList[0]);
 		File file = new File(urlList[0].getPath().substring(1));
 		String path = file.getAbsolutePath();
-		try (AsynchronousFileChannel fileChannel = AsynchronousFileChannel.open(Paths.get(path), CREATE, WRITE)) {
-			Thread[] threads = new Thread[urlList.length];
-			for (int i = 0; i < urlList.length; i++) {
-				final int fileSegment = i;
-				threads[i] = new Thread(() -> {
+		try (FileChannel fileChannel = FileChannel.open(Paths.get(path), CREATE, WRITE)) {
+			int availableServers = urlList.length;
+			List<Callable<Object>> connections = new ArrayList<>(availableServers);
+			ExecutorService threadPool = Executors.newFixedThreadPool(availableServers);
+			for (int server = 0; server < availableServers; server++) {
+				final long firstByte = server * fileSize / availableServers;
+				final long lastByte = (server + 1) * fileSize / availableServers - 1;
+				final URL url = urlList[server];
+				connections.add(Executors.callable(() -> {
 					try {
-						downloadSegmentOfFile(urlList[fileSegment], fileChannel, fileSize, fileSegment, urlList.length);
+						downloadSegment(url, fileChannel, firstByte, lastByte);
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
-				});
-				threads[i].start();
+				}));
 			}
-			for (Thread thread : threads) {
-				thread.join();
-			}
+			threadPool.invokeAll(connections);
+			threadPool.shutdown();
 		}
 		stat.printReport();
 	}
 
-	private static void downloadSegmentOfFile(URL url, AsynchronousFileChannel file, long size, int segment, int availableServers) throws IOException {
-		long firstByte = segment * size / availableServers;
-		long lastByte = (segment + 1) * size / availableServers - 1;
-		int totalBytesRead = 0;
+	private static void downloadSegment(URL url, FileChannel fileChannel, long firstByte, long lastByte) throws IOException {
+		long totalBytesRead = 0;
 		ByteBuffer buffer = ByteBuffer.allocate(BUF_SIZE);
 		do {
 			int requestedBytes = 0;
 			try (Socket socket = new Socket(url.getHost(), url.getPort())) {
 				String request = "GET " + url.getPath() + " HTTP/1.0\r\n" +
-						"Range: bytes=" + (firstByte + totalBytesRead) + "-" + lastByte + "\r\n" +
-						"\r\n";
+								"Range: bytes=" + (firstByte + totalBytesRead) + "-" + lastByte + "\r\n" +
+								"\r\n";
 				InputStream inputStream = socket.getInputStream();
 				OutputStream outputStream = socket.getOutputStream();
 				outputStream.write(request.getBytes());
@@ -83,17 +86,14 @@ public class GetFile {
 				} while (!"".equals(replyLine));
 
 				int bytesRead;
-				while ((bytesRead = inputStream.read(buffer.array())) > 0) {
+				while ((bytesRead = inputStream.read(buffer.array())) > -1) {
 					buffer.limit(bytesRead);
-					Future<Integer> w = file.write(buffer, firstByte + totalBytesRead);
-					int bytesWritten = w.get();
+					int bytesWritten = fileChannel.write(buffer, firstByte + totalBytesRead);
 					buffer.clear();
 					totalBytesRead += bytesWritten;
 					requestedBytes += bytesWritten;
 				}
-			} catch (SocketException ignored) {} catch (InterruptedException | ExecutionException e) {
-				e.printStackTrace();
-			}
+			} catch (SocketException ignored) {}
 			stat.newRequest(requestedBytes);
 		} while (totalBytesRead <= lastByte - firstByte);
 	}
