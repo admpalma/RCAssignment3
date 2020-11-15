@@ -40,22 +40,22 @@ public class GetFile {
 		parallelDownload(urlList);
 	}
 
-	private static void parallelDownload(URL[] urlList) throws IOException, InterruptedException {
+	private static void parallelDownload(URL[] urls) throws IOException, InterruptedException {
 		stat = new Stats();
-		long fileSize = getFileSizeOf(urlList[0]);
-		File file = new File(urlList[0].getPath().substring(1));
+		long fileSize = getFileSizeOf(urls[0]);
+		File file = new File(urls[0].getPath().substring(1));
 		String path = file.getAbsolutePath();
 		try (FileChannel fileChannel = FileChannel.open(Paths.get(path), CREATE, WRITE)) {
-			int availableServers = urlList.length;
+			int availableServers = urls.length;
 			List<Callable<Object>> connections = new ArrayList<>(availableServers);
 			ExecutorService threadPool = Executors.newFixedThreadPool(availableServers);
 			for (int server = 0; server < availableServers; server++) {
-				final long firstByte = server * fileSize / availableServers;
-				final long lastByte = (server + 1) * fileSize / availableServers - 1;
-				final URL url = urlList[server];
+				final int finalServer = server;
 				connections.add(Executors.callable(() -> {
 					try {
-						downloadSegment(url, fileChannel, firstByte, lastByte);
+						long firstByte = finalServer * fileSize / availableServers;
+						long lastByte = (finalServer + 1) * fileSize / availableServers - 1;
+						downloadSegment(urls[finalServer], fileChannel, firstByte, lastByte);
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
