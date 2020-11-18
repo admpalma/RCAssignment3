@@ -10,8 +10,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static java.nio.file.StandardOpenOption.*;
 
@@ -34,13 +37,16 @@ public class GetFile {
 			System.out.println("Usage: java GetFile url_to_access");
 			System.exit(0);
 		}
-		Scanner sdifugh= new Scanner(System.in);
-		sdifugh.nextLine();
 		URL[] urlList = new URL[args.length];
 		for (int i = 0; i < args.length; i++) {
 			urlList[i] = new URL(args[i]);
 		}
 		parallelDownload(urlList);
+	}
+
+	private static int getNumberRequests(long fileSize, int availableServers) {
+		long requestSize = Math.min(fileSize / availableServers, MAX_REQUEST_SIZE);
+		return (int) Math.ceil((double) fileSize / requestSize);
 	}
 
 	/**
@@ -54,14 +60,15 @@ public class GetFile {
 		String path = file.getAbsolutePath();
 		try (FileChannel fileChannel = FileChannel.open(Paths.get(path), CREATE, WRITE, TRUNCATE_EXISTING)) {
 			int availableServers = urls.length;
-			BlockingQueue<long[]> requestRanges = getRequestQueue(fileSize, availableServers);
-			List<Callable<Object>> requests = new ArrayList<>(requestRanges.size());
+			int requestsToSupply = getNumberRequests(fileSize, availableServers);
+			Supplier<long[]> requestRangeSupplier = getRangeSupplier(fileSize, requestsToSupply);
+			List<Callable<Object>> requests = new ArrayList<>(requestsToSupply);
 			ExecutorService threadPool = Executors.newFixedThreadPool(availableServers);
 			for (int server = 0; server < availableServers; server++) {
 				final int finalServer = server;
 				requests.add(Executors.callable(() -> {
 					try {
-						downloadFromQueue(urls[finalServer], fileChannel, requestRanges);
+						downloadWithRanges(urls[finalServer], fileChannel, requestRangeSupplier);
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
@@ -74,22 +81,24 @@ public class GetFile {
 	}
 
 	/**
-	 * Returns a queue of disjoint and adequately sized requests for a parallel download
+	 * Returns a supplier of disjoint and adequately sized requests for a parallel download
 	 * @param fileSize size of the file to be downloaded
-	 * @param availableServers number of servers containing the file
-	 * @return queue of request ranges
+	 * @param requestsToSupply number of requests to divide the file across
+	 * @return supplier of request ranges
 	 */
-	private static BlockingQueue<long[]> getRequestQueue(long fileSize, int availableServers) throws InterruptedException {
-		long requestSize = Math.min(fileSize / availableServers, MAX_REQUEST_SIZE);
-		int numberRequests = (int) Math.ceil((double) fileSize / requestSize);
-		BlockingQueue<long[]> requestRanges = new ArrayBlockingQueue<>(numberRequests);
-		for (int request = 0; request < numberRequests; request++) {
-			long[] requestRange = new long[2];
-			requestRange[FIRST_BYTE_INDEX] = request * fileSize / numberRequests;
-			requestRange[LAST_BYTE_INDEX] = (request + 1) * fileSize / numberRequests - 1;
-			requestRanges.put(requestRange);
-		}
-		return requestRanges;
+	private static Supplier<long[]> getRangeSupplier(long fileSize, int requestsToSupply) {
+		AtomicInteger suppliedRequests = new AtomicInteger(0);
+		return () -> {
+			int request = suppliedRequests.getAndIncrement();
+			if (request >= requestsToSupply) {
+				return null;
+			} else {
+				long[] requestRange = new long[2];
+				requestRange[FIRST_BYTE_INDEX] = request * fileSize / requestsToSupply;
+				requestRange[LAST_BYTE_INDEX] = (request + 1) * fileSize / requestsToSupply - 1;
+				return requestRange;
+			}
+		};
 	}
 
 	/**
@@ -97,12 +106,12 @@ public class GetFile {
 	 * This implementation is thread safe and therefore can be used to leverage simultaneous connections
 	 * @param url url pointing to the file
 	 * @param fileChannel local file channel where the downloaded file will be written to
-	 * @param requestRanges queue of disjoint http request ranges
+	 * @param rangeSupplier supplier of disjoint http request ranges (must notify its end with <code>null</code>)
 	 */
-	private static void downloadFromQueue(URL url, FileChannel fileChannel, BlockingQueue<long[]> requestRanges) throws IOException {
+	private static void downloadWithRanges(URL url, FileChannel fileChannel, Supplier<long[]> rangeSupplier) throws IOException {
 		ByteBuffer buffer = ByteBuffer.allocate(BUF_SIZE);
 		long[] requestRange;
-		while ((requestRange = requestRanges.poll()) != null) {
+		while ((requestRange = rangeSupplier.get()) != null) {
 			long firstByte = requestRange[FIRST_BYTE_INDEX];
 			long lastByte = requestRange[LAST_BYTE_INDEX];
 			long totalBytesRead = 0;
