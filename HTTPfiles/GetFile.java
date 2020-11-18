@@ -26,7 +26,7 @@ import static java.nio.file.StandardOpenOption.*;
 
 public class GetFile {
 	private static final int BUF_SIZE = 8192;
-	private static final int MAX_REQUEST_SIZE = 1000000;
+	private static final int MAX_REQUEST_SIZE = 8192;
 	public static final int FIRST_BYTE_INDEX = 0;
 	public static final int LAST_BYTE_INDEX = 1;
 
