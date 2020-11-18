@@ -4,12 +4,12 @@ public class Stats {
 	private long startTime = 0L;
 	private int totalRequests = 0;
 
-	
+
 	/**
 	 * Create a Stats object to do some statistics and print it
 	 */
 	public Stats() {
-		startTime = System.currentTimeMillis();		
+		startTime = System.currentTimeMillis();
 	}
 
 	/**
@@ -21,7 +21,7 @@ public class Stats {
 		totalBytes += bytes;
 	}
 
-	
+
 	/**
 	 * Print statistics report
 	 */
@@ -33,8 +33,9 @@ public class Stats {
 		System.out.println("Transfer stats:");
 		System.out.println("Total time elapsed (s):\t\t" + (milliSeconds/1000.0));
 		System.out.println("Download size (bytes):\t\t" + totalBytes);
-		System.out.printf("End-to-end debit (Kbytes/s):\t%.1f\n", speed);
+		System.out.printf("End-to-end bandwidth (Kbytes/s):\t%.1f\n", speed);
 		System.out.println("Number of requests:\t\t" + totalRequests);
+		System.out.printf("Avg. reply length (bytes):\t%.0f\n", totalBytes/(double)totalRequests);
 		System.out.printf("Avg. request duration (ms):\t%.1f", milliSeconds/(double)totalRequests);
 		System.out.println("\n==========================================================\n");
 
